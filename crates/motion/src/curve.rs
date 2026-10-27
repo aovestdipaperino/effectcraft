@@ -158,7 +158,9 @@ impl Mapped<'_> {
         self.scale * self.ch.eval(t) + self.offset
     }
     fn key_at(&self, t: f64) -> Option<(usize, &MKey)> {
-        self.ch.keys.iter().enumerate().find(|(_, k)| (k.t - t).abs() < SAME_TIME)
+        // Keys are sorted by time (`read_channel`); a binary search keeps `merge` O(n log n).
+        let i = self.ch.keys.partition_point(|k| k.t < t - SAME_TIME);
+        self.ch.keys.get(i).filter(|k| (k.t - t).abs() < SAME_TIME).map(|k| (i, k))
     }
     /// The interpolation of the channel segment containing `t` (when it has no key there).
     fn segment_interp(&self, t: f64) -> Interp {

@@ -535,3 +535,38 @@ fn drop_zone_clips_with_bare_file_names_resolve_next_to_the_document() {
     assert_eq!(clips[0].path, None);
     assert_eq!(clips[0].relative.as_deref(), Some("Drop Zone Transition A.tiff"));
 }
+
+/// Regression: an absurd or tiny frame rate overflowed the NTSC numerator (a panic in debug
+/// builds) or rounded to a zero rate.
+#[test]
+fn extreme_frame_rates_fall_back() {
+    for (fps, ntsc) in [(1e300, true), (1e300, false), (1e-300, false), (0.0001, true), (f64::MAX, true)] {
+        assert_eq!(scene_rate(fps, ntsc), FrameRate::FPS_30, "{fps} ntsc={ntsc}");
+    }
+    let text = doc("").replace("<frameRate>30</frameRate>", "<frameRate>1e300</frameRate>");
+    let mut p = Project::default();
+    let r = import(&mut p, text.as_bytes(), "X", &none).unwrap();
+    assert_eq!(main_comp(&p, r.comp).frame_rate, FrameRate::FPS_30);
+}
+
+/// Regression: matching key times scanned every key, making a long curve quadratic to import
+/// (about 11 s for this document before the fix; well under a second after).
+#[test]
+fn long_curves_import_in_linear_time() {
+    let n = 100_000;
+    let mut keys = String::with_capacity(n * 90);
+    for i in 0..n {
+        keys.push_str(&format!(r#"<keypoint interpolation="1"><time>{}</time><value>{}</value></keypoint>"#, t(i as i64 * 4004), i % 100));
+    }
+    let ch = |name: &str, id: u32| format!(r#"<parameter name="{name}" id="{id}"><curve type="1">{keys}</curve></parameter>"#);
+    let props =
+        format!(r#"<parameter name="Transform" id="100"><parameter name="Scale" id="105">{}{}{}</parameter></parameter>"#, ch("X", 1), ch("Y", 2), ch("Z", 3));
+    let body = format!(r#"<layer name="G" id="3">{}</layer>"#, solid_node("S", "", &props));
+    let text = doc(&body);
+    let mut p = Project::default();
+    let start = std::time::Instant::now();
+    let r = import(&mut p, text.as_bytes(), "Long", &none).unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(tr(&main_comp(&p, r.comp).layers[0]).get("scale").unwrap().keys.len(), n);
+    assert!(elapsed < std::time::Duration::from_secs(5), "{elapsed:?}");
+}

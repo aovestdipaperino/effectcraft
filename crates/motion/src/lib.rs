@@ -87,7 +87,9 @@ pub(crate) fn fmt_time(t: Tick) -> String {
 
 /// The scene frame rate from `frameRate` and the `NTSC` flag (30 + NTSC = 29.97).
 pub(crate) fn scene_rate(fps: f64, ntsc: bool) -> FrameRate {
-    if !fps.is_finite() || fps <= 0.0 {
+    // Motion scenes run at 1 to a few hundred fps; anything else is corrupt or hostile (and
+    // would overflow the NTSC numerator or round to a zero rate).
+    if !fps.is_finite() || !(1.0..=1000.0).contains(&fps) {
         return FrameRate::FPS_30;
     }
     let whole = fps.round();
