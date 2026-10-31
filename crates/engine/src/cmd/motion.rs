@@ -47,7 +47,10 @@ fn import_motion(s: &mut Session, p: &Value) -> Result<Value> {
     let clips = effectcraft_motion::clip_refs(&bytes).map_err(|e| EngineError::Other(e.to_string()))?;
     let mut found: HashMap<String, Footage> = HashMap::new();
     for c in &clips {
-        let probed = candidates(c, &dir).into_iter().filter(|f| s.services.exists(f)).find_map(|f| s.probe_footage(&f).ok());
+        // A one-frame clip is that image alone: `shot_0001.png` and `shot_0002.png` used as two
+        // stills must not each become the `shot_[0001-0002]` sequence.
+        let probe = |f: &str| if c.still { s.probe_file(f) } else { s.probe_footage(f) };
+        let probed = candidates(c, &dir).into_iter().filter(|f| s.services.exists(f)).find_map(|f| probe(&f).ok());
         if let Some(f) = probed {
             found.insert(c.id.clone(), f);
         }
